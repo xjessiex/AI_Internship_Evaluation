@@ -1,0 +1,7 @@
+# Automated Insights Data Science Intern Evaluation
+
+## Getting Started
+Dataset consists of about 42,000 movie summaries scraped from Wikipedia. At first glance, the dataset would require some cleaning:
+
+* Convert the mixed date formats to one format
+* Eliminate rows with NAs (~1% of the total observations)
