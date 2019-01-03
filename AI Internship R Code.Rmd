@@ -1,0 +1,77 @@
+---
+title: "AI Internship Evaluation"
+author: "Xiaoxuan (Jessie) Yang"
+date: "1/3/2019"
+output: pdf_document
+---
+# Set up
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+
+# Install and load packages
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("lubridate")
+
+library("dplyr")
+library("tidyverse")
+library("tibble")
+library("readr")
+library("lubridate")
+# Load the raw data
+movie_data <- as_tibble(read_csv("~/Coding_AI/movie_data.csv",
+                                   col_types = cols(
+                                     id = col_integer(),
+                                     title = col_character(),
+                                     release_date = col_character(), # using col_date causes parsing failures
+                                     box_office_revenue = col_double(),
+                                     runtime = col_double(),
+                                     genres = col_character(),
+                                     summary = col_character()
+                                    )
+                                )
+                        ) # using tibble to avoid converting strings to factors
+
+
+# Check parsing failures
+problems(movie_data) # parsing failure in the date column
+
+dim(movie_data) # check dimension: 42204x7
+```
+
+
+# Data Preprocessing
+```{r}
+# Clean date 
+  # Create a Year column
+  movie_data[,"year"]<-year(as.Date(movie_data$release_date, "%Y",tryFormats = c("yyyy", "yyyy-mm-dd", "yyyy-mm")))
+
+# Remove non-words components in the Summary column
+
+
+# Eliminate missing values for the genres
+  # check missing value for each column
+  colSums(sapply(movie_data, is.na)) # genres has "[]" as the form of missing value
+  
+  # filter out empty cells in the genres column
+  movie_data <- filter(movie_data, genres != "[]") 
+
+
+# Remove duplicates
+  # check duplicate rows
+  sum(duplicated(movie_data)) # 0 
+
+  # check duplicate summary--assumption: no films should share the same summary
+  dedup.movie_data = movie_data[!duplicated(movie_data$summary),] 
+  
+  
+dim(dedup.movie_data) # check dimension: 42196 x 8
+
+```
+
+# Genre Separation
+```{r}
+
+```
+
