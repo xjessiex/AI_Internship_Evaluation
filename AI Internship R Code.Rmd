@@ -13,12 +13,18 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("tidyverse")
 # install.packages("dplyr")
 # install.packages("lubridate")
+# install.packages("tm")
 
+
+
+library("tm")
 library("dplyr")
 library("tidyverse")
 library("tibble")
 library("readr")
 library("lubridate")
+
+
 # Load the raw data
 movie_data <- as_tibble(read_csv("~/Coding_AI/movie_data.csv",
                                    col_types = cols(
@@ -49,6 +55,8 @@ dim(movie_data) # check dimension: 42204x7
 
 # Remove non-words components in the Summary column
 
+  test="{{Plot|dateAct 1Act 2Act 3Act 4Act 5 Finally negotiations are made for Henry to be named king of both England and France. He has a brief romantic interlude with Catherine while the French and English royal delegations negotiate the Treaty of Troyes. The Greek chorus informs the audience that an English-French union lasted as long as Henry V lived and was only lost under his successor Henry VI."
+  check<-removePunctuation(test)
 
 # Eliminate missing values for the genres
   # check missing value for each column
@@ -56,7 +64,6 @@ dim(movie_data) # check dimension: 42204x7
   
   # filter out empty cells in the genres column
   movie_data <- filter(movie_data, genres != "[]") 
-
 
 # Remove duplicates
   # check duplicate rows
@@ -68,9 +75,35 @@ dim(movie_data) # check dimension: 42204x7
   
 dim(dedup.movie_data) # check dimension: 42196 x 8
 
+data_final <- dedup.movie_data
 ```
 
-# Genre Separation
+# Genre Separation and Frequency
+```{r}
+
+# Clean the genre column
+  # Eliminate the bracket in the genre column
+    data_final$genres = gsub("\\[|\\]", "", data_final$genres)
+  
+  # Lower case
+    data_final$genres = tolower(data_final$genres)
+    
+  # Eliminate space and convert two-word category into one-word
+    data_final$genres = gsub(" ", "", data_final$genres ) # e.g. "romance film" -> "romancefilm"
+  
+  # Elimiate the comma
+    data_final$genres = gsub(",", " ", data_final$genres)
+    
+# Create     
+  genre <- Corpus(VectorSource(data_final$genres))
+  genre_dtm <- DocumentTermMatrix(genre)
+  
+  genre_freq <- colSums(as.matrix(genre_dtm))
+  freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE) 
+  genre_wf <- data.frame(word=names(genre_freq), freq=genre_freq)
+```
+
+# Popular genres based on box office revenue
 ```{r}
 
 ```
