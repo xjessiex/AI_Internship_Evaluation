@@ -14,16 +14,17 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("dplyr")
 # install.packages("lubridate")
 # install.packages("tm")
+# install.packages("tidytext") 
+# install.packages("ggplot2")
 
-
-
-library("tm")
 library("dplyr")
 library("tidyverse")
 library("tibble")
 library("readr")
 library("lubridate")
-
+library("tm") # used to create corpora
+library("tidytext") # used for tokenization
+library("ggplot2")
 
 # Load the raw data
 movie_data <- as_tibble(read_csv("~/Coding_AI/movie_data.csv",
@@ -31,7 +32,7 @@ movie_data <- as_tibble(read_csv("~/Coding_AI/movie_data.csv",
                                      id = col_integer(),
                                      title = col_character(),
                                      release_date = col_character(), # using col_date causes parsing failures
-                                     box_office_revenue = col_double(),
+                                     box_office_revenue = col_number(),
                                      runtime = col_double(),
                                      genres = col_character(),
                                      summary = col_character()
@@ -55,8 +56,7 @@ dim(movie_data) # check dimension: 42204x7
 
 # Remove non-words components in the Summary column
 
-  test="{{Plot|dateAct 1Act 2Act 3Act 4Act 5 Finally negotiations are made for Henry to be named king of both England and France. He has a brief romantic interlude with Catherine while the French and English royal delegations negotiate the Treaty of Troyes. The Greek chorus informs the audience that an English-French union lasted as long as Henry V lived and was only lost under his successor Henry VI."
-  check<-removePunctuation(test)
+  
 
 # Eliminate missing values for the genres
   # check missing value for each column
@@ -70,41 +70,82 @@ dim(movie_data) # check dimension: 42204x7
   sum(duplicated(movie_data)) # 0 
 
   # check duplicate summary--assumption: no films should share the same summary
-  dedup.movie_data = movie_data[!duplicated(movie_data$summary),] 
+  dedup.movie_data <- movie_data[!duplicated(movie_data$summary),] 
   
   
 dim(dedup.movie_data) # check dimension: 42196 x 8
 
-data_final <- dedup.movie_data
+movie_data <- dedup.movie_data
 ```
 
-# Genre Separation and Frequency
+# Genre Separation to Find Most Produced Genres
 ```{r}
 
 # Clean the genre column
   # Eliminate the bracket in the genre column
-    data_final$genres = gsub("\\[|\\]", "", data_final$genres)
+    movie_data$genres <- gsub("\\[|\\]", "", movie_data$genres)
   
   # Lower case
-    data_final$genres = tolower(data_final$genres)
+    movie_data$genres <- tolower(movie_data$genres)
     
   # Eliminate space and convert two-word category into one-word
-    data_final$genres = gsub(" ", "", data_final$genres ) # e.g. "romance film" -> "romancefilm"
+    movie_data$genres <- gsub(" ", "", movie_data$genres ) # e.g. "romance film" -> "romancefilm"
   
   # Elimiate the comma
-    data_final$genres = gsub(",", " ", data_final$genres)
+    movie_data$genres <- gsub(",", " ", movie_data$genres)
     
-# Create     
-  genre <- Corpus(VectorSource(data_final$genres))
+# Create Corpus   
+  genre <- Corpus(VectorSource(movie_data$genres))
   genre_dtm <- DocumentTermMatrix(genre)
   
   genre_freq <- colSums(as.matrix(genre_dtm))
   freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE) 
   genre_wf <- data.frame(word=names(genre_freq), freq=genre_freq)
+  
+  
 ```
 
-# Popular genres based on box office revenue
+# Most Profitable Genres 
 ```{r}
+# Remove rows with NAs in the box office revenue column
+  revenue_movie<- movie_data %>%
+    filter(box_office_revenue > 0)
 
+
+```
+
+# Characteristic of the Movie Summaries
+```{r}
+selected_genre = "action"
+
+# Filter the summary based on the genre
+  char_movie <- movie_data %>% 
+    filter(str_detect(genres, selected_genre)) %>% 
+    select(genres, summary)
+  
+# Tokenization
+  char_movie <- char_movie %>%
+    unnest_tokens(word, summary)
+  
+# Remove stop words
+  char_movie <- char_movie %>%
+    anti_join(stop_words) 
+  
+# Counts and word frequency
+  char_movie %>%
+    count(word, sort = TRUE) %>%
+    filter(n>2000) %>%
+    mutate(word = reorder(word, n)) %>%
+    ggplot(aes(word, n)) +
+    geom_col() +
+    xlab(NULL) +
+    coord_flip()
+  
+```
+
+
+
+```{r}
+sessionInfo()
 ```
 
