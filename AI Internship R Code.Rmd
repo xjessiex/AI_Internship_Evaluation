@@ -21,6 +21,8 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("ggplot2")
 # install.packages("SnowballC")
 # install.packages("Hmisc")
+# install.packages("formattable")
+# install.packages("eply")
 
 library("here")
 library("dplyr")
@@ -33,6 +35,8 @@ library("tidytext") # used for tokenization
 library("ggplot2")
 library("SnowballC")
 library("Hmisc") # used to capitalize genre names
+library("formattable")
+library("eply") # get rid of the quotation marks of genres
 
 # Set color-blind friendly palette
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
@@ -76,11 +80,12 @@ dim(movie_data) # check dimension: 42204x7
 # Clean date 
   # Create a Year column
   movie_data[,"year"]<-year(as.Date(movie_data$release_date, "%Y",tryFormats = c("yyyy", "yyyy-mm-dd", "yyyy-mm")))
+  
+  # Remove a movie made in 1010
+  movie_data <- movie_data[!grepl("Hunting Season", movie_data$title),]
 
-
-
+  
 # Clean the genre column  
-    
   # Eliminate space and convert two-word category into one-word
     movie_data$genres <- gsub(" ", "", movie_data$genres ) # e.g. "romance film" -> "romancefilm"
   
@@ -105,7 +110,7 @@ dim(movie_data) # check dimension: 42204x7
   colSums(sapply(movie_data, is.na)) # genres has "[]" as the form of missing value
   
   # filter out empty cells in the genres column
-  movie_data <- filter(movie_data, genres != "[]") 
+  movie_data <- filter(movie_data, genres != "") 
   
     
 # Remove duplicates
@@ -118,10 +123,27 @@ dim(movie_data) # check dimension: 42204x7
 # Lower case (only for genres)
     dedup.movie_data$genres <- tolower(dedup.movie_data$genres)  
   
-dim(dedup.movie_data) # check dimension: 42196 x 8
+  
+dim(dedup.movie_data) # check dimension: 41784 x 8
 
-movie_data <- dedup.movie_data
+# Save the cleaned dataset
+  saveRDS(dedup.movie_data, here("data_clean.rds"))
+
 ```
+
+
+# Movie released over the year
+```{r}
+# Load the cleaned dataset
+movie_data <- readRDS(here("data_clean.rds"))
+
+  ggplot(movie_data, aes(year)) +
+    geom_bar() +
+    labs(x = "Released Year", y = "Movie Count", title = "Histogram of Movie Released") +
+    theme(plot.title = element_text(hjust = 0.5))
+
+```
+
 
 # Find most produced genres by creating corpus objects
 ```{r}
@@ -133,7 +155,11 @@ movie_data <- dedup.movie_data
   genre_freq <- colSums(as.matrix(genre_dtm))
   freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE) 
   genre_wf <- data.frame(word=names(freq), freq=freq)
+  genre_wf$word <- unquote(genre_wf$word) # eliminate the quotation marks
   rownames(genre_wf) <- NULL  # eliminate rownames
+  
+# Plot out the top produced genres
+  
   
 ```
 
@@ -164,25 +190,31 @@ movie_data <- dedup.movie_data
       print(i)
       revenue <- rbind(revenue, revenue_dataset) # compile
     }
+      
 
-# Calculate mean based on genre
-      mean_revenue <- revenue %>%
-        group_by(genre) %>%
-        summarise(mean_revenue = mean(box_office_revenue, na.rm = TRUE))
-
+# Calculate mean based on genre and year
+    sum_revenue <- revenue %>%
+        group_by(genre, year) %>%
+        filter(genre != "film") %>%
+        summarise(sum= sum(box_office_revenue, na.rm = TRUE))
+  
+    sum_revenue$genre <- unquote(sum_revenue$genre) # eliminate the quotation marks
+    
+    sum_revenue %>%
+      group_by(genre) %>%
+      summarise("Sum_Revenue" = sum(sum)) %>%
+      arrange(desc(Sum_Revenue)) %>%
+      top_n(5, Sum_Revenue) %>%
+      formattable(list(Sum_Revenue = color_bar("orange")), align = 'l')
+  
       
 # Create updated corpus for filtered genres 
-  genre_r <- Corpus(VectorSource(revenue_movie$genres))
-  genre_dtm_r <- DocumentTermMatrix(genre_r)
-  
-  genre_freq_r <- colSums(as.matrix(genre_dtm_r))
-  freq_r <- sort(colSums(as.matrix(genre_dtm_r)), decreasing=TRUE) 
-  genre_wf_r <- data.frame(word=names(genre_freq_r), freq=freq_r)
+    genre_r <- Corpus(VectorSource(revenue_movie$genres))
+    genre_dtm_r <- DocumentTermMatrix(genre_r)
     
-# Plot out the top profitable genres
-  
-
-  
+    genre_freq_r <- colSums(as.matrix(genre_dtm_r))
+    freq_r <- sort(colSums(as.matrix(genre_dtm_r)), decreasing=TRUE) 
+    genre_wf_r <- data.frame(word=names(genre_freq_r), freq=freq_r)      
   
 ```
 
@@ -216,11 +248,15 @@ for (i in 1:5){
   topfive_dataset$genre<-capitalize(topfive_dataset$genre)
   
   
+# Save the top five genre dataset
+  saveRDS(topfive_dataset, here("data_topfive.rds"))
+  
 ```
 
 
 # Common words used in the summaries
 ```{r}
+topfive_dataset <- readRDS(here("data_topfive.rds"))
 
 # Tokenization
   topfive_words <- topfive_dataset %>%
@@ -266,7 +302,6 @@ for (i in 1:5){
 
 # Check if the summary follows Zipf's law
 ```{r}
-
 ##### top five popular genres #####
 
   # Plot out Term Frequency Distributionfor each genre  
