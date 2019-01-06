@@ -4,12 +4,15 @@ author: "Xiaoxuan (Jessie) Yang"
 date: "1/3/2019"
 output: pdf_document
 ---
+
 # Set up
 ```{r setup, include=FALSE}
 rm(list=ls())
 knitr::opts_chunk$set(echo = TRUE)
 
+
 # Install and load packages
+# install.packages("here")
 # install.packages("tidyverse")
 # install.packages("dplyr")
 # install.packages("lubridate")
@@ -19,6 +22,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("SnowballC")
 # install.packages("Hmisc")
 
+library("here")
 library("dplyr")
 library("tidyverse")
 library("tibble")
@@ -45,7 +49,7 @@ cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
 # Load the raw data
 ```{r}
 
-movie_data <- as_tibble(read_csv("~/Coding_AI/movie_data.csv",
+movie_data <- as_tibble(read_csv(here("movie_data.csv"),
                                    col_types = cols(
                                      id = col_integer(),
                                      title = col_character(),
@@ -74,6 +78,28 @@ dim(movie_data) # check dimension: 42204x7
   movie_data[,"year"]<-year(as.Date(movie_data$release_date, "%Y",tryFormats = c("yyyy", "yyyy-mm-dd", "yyyy-mm")))
 
 
+
+# Clean the genre column  
+    
+  # Eliminate space and convert two-word category into one-word
+    movie_data$genres <- gsub(" ", "", movie_data$genres ) # e.g. "romance film" -> "romancefilm"
+  
+    # Eliminate the bracket, backslash, and comma (leave a space) in the genre column
+    movie_data$genres <- gsub("\\[|\\]", "", movie_data$genres)
+    movie_data$genres <- gsub("\\", "", movie_data$genres, fixed= TRUE)
+    movie_data$genres <- gsub(",", " ", movie_data$genres)
+    
+     
+  # Unify similar movie genre
+    movie_data$genres <- gsub("Coming-of-agefilm", "Comingofage", movie_data$genres)
+    movie_data$genres <- gsub("Filmu00e0clef", "", movie_data$genres)
+    movie_data$genres <- gsub("Dogme95", "", movie_data$genres)
+    movie_data$genres <- gsub("Educational", "Education", movie_data$genres)
+    movie_data$genres <- gsub("Children's/Family", "Children's", movie_data$genres)
+    movie_data$genres <- gsub("Biographicalfilm", "Biography", movie_data$genres)
+    # not going to include more due to time limit
+  
+    
 # Eliminate missing values for the genres
   # check missing value for each column
   colSums(sapply(movie_data, is.na)) # genres has "[]" as the form of missing value
@@ -81,16 +107,7 @@ dim(movie_data) # check dimension: 42204x7
   # filter out empty cells in the genres column
   movie_data <- filter(movie_data, genres != "[]") 
   
-# Clean the genre column  
-  # Eliminate the bracket in the genre column
-    movie_data$genres <- gsub("\\[|\\]", "", movie_data$genres)
     
-  # Eliminate space and convert two-word category into one-word
-    movie_data$genres <- gsub(" ", "", movie_data$genres ) # e.g. "romance film" -> "romancefilm"
-  
-  # Elimiate the comma
-    movie_data$genres <- gsub(",", " ", movie_data$genres)
-
 # Remove duplicates
   # check duplicate rows
   sum(duplicated(movie_data)) # 0 
@@ -108,33 +125,64 @@ movie_data <- dedup.movie_data
 
 # Find most produced genres by creating corpus objects
 ```{r}
+
 # Create Corpus   
   genre <- Corpus(VectorSource(movie_data$genres))
   genre_dtm <- DocumentTermMatrix(genre)  # create a document-term matrix from a Corpus object
   
   genre_freq <- colSums(as.matrix(genre_dtm))
   freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE) 
-  genre_wf <- data.frame(word=names(genre_freq), freq=freq)
+  genre_wf <- data.frame(word=names(freq), freq=freq)
   rownames(genre_wf) <- NULL  # eliminate rownames
-
   
 ```
 
-# most profitable genres 
+# Find most profitable genres 
 ```{r}
+
 # Remove rows with NAs in the box office revenue column
   revenue_movie<- movie_data %>%
     filter(box_office_revenue > 0)
 
-# Create updated corpus for all genres after filtering   
-  genre_r <- Corpus(VectorSource( revenue_movie$genres))
+  
+  list_revenue <- genre_wf$word
+  
+# Compile revenues based on genre
+    # Create an empty tibble to compile all genres
+      revenue <- as.tibble(matrix(ncol=2, nrow=0)) 
+    
+    for (i in 1:length(list_revenue)){
+      
+      selected_genre = as.character(list_revenue[i])
+    
+    # Filter the revenue based on the genre
+      revenue_dataset <- revenue_movie %>% 
+        filter(str_detect(genres, selected_genre)) %>% 
+        mutate(genre = selected_genre) %>%
+        select(box_office_revenue, genre, year)
+      
+      print(i)
+      revenue <- rbind(revenue, revenue_dataset) # compile
+    }
+
+# Calculate mean based on genre
+      mean_revenue <- revenue %>%
+        group_by(genre) %>%
+        summarise(mean_revenue = mean(box_office_revenue, na.rm = TRUE))
+
+      
+# Create updated corpus for filtered genres 
+  genre_r <- Corpus(VectorSource(revenue_movie$genres))
   genre_dtm_r <- DocumentTermMatrix(genre_r)
   
   genre_freq_r <- colSums(as.matrix(genre_dtm_r))
   freq_r <- sort(colSums(as.matrix(genre_dtm_r)), decreasing=TRUE) 
-  genre_wf_r <- data.frame(word=names(genre_freq_r), freq=genre_freq)
+  genre_wf_r <- data.frame(word=names(genre_freq_r), freq=freq_r)
     
 # Plot out the top profitable genres
+  
+
+  
   
 ```
 
@@ -205,6 +253,8 @@ for (i in 1:5){
     xlab(NULL) +
     coord_flip()
   
+  
+
 ```
 
 # Plot dendrogram to identify word groups used in each genre
