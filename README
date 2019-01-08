@@ -1,7 +1,8 @@
 # Automated Insights Data Science Intern Evaluation
 
 ## Getting Started
-Dataset consists of about 42,000 movie summaries scraped from Wikipedia. At first glance, the dataset would require some cleaning:
+[Dataset](https://www.dropbox.com/s/ge8dsb56vv9ofd4/movie_data.csv) consists of about 42,000 movie summaries scraped from Wikipedia. At first glance, the dataset requires some preprocessing:
 
 * Convert the mixed date formats to one format
-* Eliminate rows with NAs (~1% of the total observations)
+* Eliminate rows with NAs in the Genres column (~1% of the total observations)
+* Remove punctuation and other non-words
