@@ -8,7 +8,7 @@ output: pdf_document
 ```{r Setup, include=FALSE}
 
 knitr::opts_chunk$set(echo = TRUE)
-
+set.seed(2019)
 
 # Install and load packages
 # install.packages("here")
@@ -36,10 +36,9 @@ library(tidytext) # used for tokenization
 library(ggplot2)
 library(Hmisc) # used to capitalize genre names
 library(eply) # get rid of the quotation marks of genres
-library(cleanNLP)
+library(cleanNLP) 
 library(knitr)
-library(kableExtra)
-
+library(kableExtra) # display tables in r markdown
 
 # Set color-blind friendly palette
   cbPalette <- c("#999999", 
@@ -66,7 +65,7 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
                                    col_types = cols(
                                      id = col_integer(),
                                      title = col_character(),
-                                     release_date = col_character(), # using col_date causes parsing failures
+                                     release_date = col_character(), 
                                      box_office_revenue = col_number(),
                                      runtime = col_double(),
                                      genres = col_character(),
@@ -128,6 +127,8 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
   # check duplicate summary--assumption: no films should share the same summary
   dedup.movie_data <- movie_data[!duplicated(movie_data$summary),] 
   
+  
+
 # Lower case (only for genres)
   dedup.movie_data$genres <- tolower(dedup.movie_data$genres)  
   
@@ -154,8 +155,7 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
 ```
 
 
-```{r Calculate genre frequency by creating corpus}
-
+```{r tm: Calculate genre frequency by creating corpus}
 # Load the cleaned dataset
   movie_data <- readRDS(here::here("rds_data", "data_clean.rds"))
 
@@ -182,9 +182,8 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
 ```
 
 
-```{r Find most produced genres}
+```{r Find the most produced movie genres}
 ##### Plot out the top produced genres #####
-
   # Load the cleaned dataset
   genre_wf <- readRDS(here::here("rds_data", "genre_frequency.rds"))
   
@@ -198,7 +197,8 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
       ggplot(aes(x = reorder(Word, Frequency), Frequency)) +
       geom_bar(position="dodge",stat="identity", fill = "#E69F00", width = 0.6) +
       labs(x = NULL, y = "Genre Frequency ($)") +
-      theme(text = element_text(size=14), axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
+      theme(text = element_text(size=14), 
+            axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
       ggtitle("Top 10 Most Produced Movie Genres") +
       coord_flip()
 ```
@@ -241,7 +241,6 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
   
     sum_revenue$genre <- unquote(sum_revenue$genre) # eliminate the quotation marks
     
-    
      # Manually add space to movie genres
     sum_revenue$genre[sum_revenue$genre == "romancefilm"] <- "Romance Film"
     sum_revenue$genre[sum_revenue$genre == "worldcinema"] <- "World Cinema"
@@ -268,14 +267,14 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
       ggplot(aes(x = reorder(genre, Sum_Revenue), Sum_Revenue)) +
       geom_bar(position="dodge",stat="identity", fill = "#E69F00", width = 0.6) +
       labs(x = NULL, y = "Total Box Office Revenue ($)") +
-      theme(text = element_text(size=14), axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
+      theme(text = element_text(size=14), 
+            axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
       ggtitle("Top 10 Profitable Movie Genres") +
       coord_flip()
 ```
 
 
 ```{r Subset dataset with top five most produced movie genres}
-
 # Load the cleaned dataset
   movie_data <- readRDS(here::here("rds_data", "data_clean.rds"))
 
@@ -286,7 +285,7 @@ movie_data <- as_tibble(read_csv("movie_data.csv",
   topfive <- as.tibble(matrix(ncol=2, nrow=0)) 
 
   
-##### Compile top five most produced movie genres #####
+##### Compile data for the top five most produced movie genres #####
 for (i in 1:5){
   selected_genre = list_genre[i]
   
@@ -296,17 +295,9 @@ for (i in 1:5){
       select(summary) %>%
       mutate(summary, 
              genre = selected_genre)
-
-    # Prevent column name from being saved into the text file
-    # names(topfive_dataset) <- NULL
     
-    # Compile text file for cleanNLP
-    # file_path = here::here("corpus_topfive", paste0(selected_genre, ".txt"))
-    # write.table(topfive_dataset, file = file_path, sep =",")
-    # 
     topfive <- rbind(topfive, topfive_dataset) # compile dataset
   }
-  
   
   
 # We will use this selected genres dataset to conduct the rest of the analysis  
@@ -323,7 +314,7 @@ for (i in 1:5){
 ```
 
 
-```{r Use cleanNLP package to run annotator}
+```{r cleanNLP: Run annotator}
 
 # install.packages("reticulate")
   library(reticulate)
@@ -348,7 +339,7 @@ for (i in 1:5){
 ```
 
 
-```{r CleanNLP: Analyze annotation}
+```{r cleanNLP: Analyze annotation}
 # Load the annotation dataset
   anno <- readRDS(here::here("rds_data", "anno_topfive_bygenre.rds"))
 # Extract tokens 
@@ -423,6 +414,7 @@ for (i in 1:5){
   
 ```
 
+
 ```{r CleanNLP: Topic modeling}
 # Load the annotation dataset
   anno <- readRDS(here::here("rds_data", "anno_topfive_bygenre.rds"))
@@ -445,11 +437,19 @@ for (i in 1:5){
 ```{r Examine document and topic relationship}  
   tm_movies <- readRDS(here::here("rds_data", "five-topic LDA.rds"))
   
-# Examine per-document-per-topic probabilities
+##### Examine per-term-per-topic probabilities #####
   chapters_topics <- tidy(tm_movies, matrix = "beta")
   
+# Modify topic column  
+  chapters_topics$topic[chapters_topics$topic == 1] <- "Topic 1"
+  chapters_topics$topic[chapters_topics$topic == 2] <- "Topic 2"
+  chapters_topics$topic[chapters_topics$topic == 3] <- "Topic 3"
+  chapters_topics$topic[chapters_topics$topic == 4] <- "Topic 4"
+  chapters_topics$topic[chapters_topics$topic == 5] <- "Topic 5"
+
+  saveRDS(chapters_topics, here::here("rds_data", "beta_LDA_table.rds"))
   
-  plot_topwords <- chapters_topics %>%
+  plot_topwords <-  chapters_topics %>%
     group_by(topic) %>%
     top_n(5, beta) %>%
     ungroup() %>%
@@ -457,84 +457,39 @@ for (i in 1:5){
     mutate(term = reorder(term, beta)) %>%
     ggplot(aes(term, beta, fill = factor(topic))) +
     geom_col(show.legend = FALSE) +
-    labs(x = "Per-topic-per-word Probabilities", y = "Terms", caption = "Figure 4.1 The terms that are most common within each topic") +
+    labs(x = "Per-topic-per-word Probabilities", y = "Terms") +
     theme_minimal(base_size = 10) +
+    theme(plot.caption = element_text(hjust = 4)) +
     scale_fill_manual(values=cbPalette) +
     facet_wrap(~topic, scales = "free") +
     coord_flip()
 
     saveRDS(plot_topwords, here::here("image", "Beta_LDA.rds"))
 
+##### Examine per-document-per-topic #####
   chapters_gamma <- tidy(tm_movies, matrix = "gamma")
-  
 
-  plot_topicgen <- chapters_gamma %>%
-    mutate(title = reorder(document, gamma * topic)) %>%
-    ggplot(aes(factor(topic), gamma, fill = document)) +
-    labs(x = "Gamma Probabilities for Genre", y = "Five Topics", caption = "Figure 4.2 The gamma probabilities for each genre") +
-    geom_bar(position="dodge",stat="identity") +
-    facet_wrap(~ title)
-
-    saveRDS(plot_topicgen, here::here("image", "gamma_LDA.rds"))
+  # convert to a table format
+  table_gamma <- spread(chapters_gamma, topic, gamma)
+  colnames(table_gamma) <- c("Genre", "Topic 1", "Topic 2", "Topic 3", "Topic 4", "Topic 5")
+  rownames(table_gamma) <- table_gamma$Genre
   
+  saveRDS(table_gamma, here::here("rds_data", "gamma_LDA_table.rds"))
+  
+  # prevent scientific expression
+  options("scipen"=999, "digits"=2)
+
+  # plot the table for document frequency
+  table_gamma[, 2:6] %>%
+    mutate(
+      Genre = row.names(table_gamma)) %>%
+    select(Genre, everything()) %>%
+    kable("html", escape = F) %>%
+    kable_styling(bootstrap_options = "basic", full_width = F) %>%
+    column_spec(5, width = "3cm") 
+
+
 ```
-
-
-```{r Analyze term frequency by removing stopwords}
-topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
-
-# Customize stopwords
-  my_stop_words <- bind_rows(stop_words, 
-                           data_frame(word = c("film"), 
-                                      lexicon = rep("custom", 30)))
-
-##### Tokenization and stopwords removal #####
-  topfive_words_nostop <- topfive_dataset %>%
-    unnest_tokens(word, summary) %>%
-    filter(!word %in% my_stop_words$word,
-         !word %in% str_remove_all(stop_words$word, "'"),
-         str_detect(word, "[a-z]")) %>%
-    count(genre, word, sort = TRUE) %>%
-    ungroup()
-
-##### Calculate word frequencies for top five genres #####
-  total_words_nostop <- topfive_words_nostop %>%
-    group_by(genre) %>%
-    summarise(total=sum(n))
-  
-  # Include total words for each row
-  topfive_words_nostop <- left_join(topfive_words_nostop, total_words_nostop)
-  
-  frequency_nostop <- topfive_words_nostop %>%
-    mutate(freq = n/total)
-  
-##### Plot term frequencies for five genres #####
-  common_words <- frequency_nostop %>%
-    group_by(genre) %>%
-    top_n(10, freq) %>%
-    ungroup() %>%
-    arrange(genre, -freq)
-
-  common_words %>%
-  mutate(word = reorder(word, freq)) %>%
-  group_by(genre, word) %>%    
-  arrange(desc(freq)) %>%  
-  ungroup() %>%
-  mutate(word = factor(paste(word, genre, sep = "__"), 
-                       levels = rev(paste(word, genre, sep = "__")))) %>%
-  ggplot(aes(word, freq, fill = as.factor(genre))) +
-    geom_col(show.legend = FALSE) +
-    coord_flip() +
-    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
-    labs(title = "Top 10 terms in each genre",
-         x = NULL, y = expression(freq)) +
-    facet_wrap(~ genre, ncol = 3, scales = "free")
- 
- 
-  
-  
-
-```     
 
 
 ```{r Check Zipfs law}
@@ -601,6 +556,63 @@ topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
 
 ### More attempt
 
+```{r Tidytext: Analyze term frequency by removing stopwords}
+topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
+
+# Customize stopwords
+  my_stop_words <- bind_rows(stop_words, 
+                           data_frame(word = c("film"), 
+                                      lexicon = rep("custom", 30)))
+
+##### Tokenization and stopwords removal #####
+  topfive_words_nostop <- topfive_dataset %>%
+    unnest_tokens(word, summary) %>%
+    filter(!word %in% my_stop_words$word,
+         !word %in% str_remove_all(stop_words$word, "'"),
+         str_detect(word, "[a-z]")) %>%
+    count(genre, word, sort = TRUE) %>%
+    ungroup()
+
+##### Calculate word frequencies for top five genres #####
+  total_words_nostop <- topfive_words_nostop %>%
+    group_by(genre) %>%
+    summarise(total=sum(n))
+  
+  # Include total words for each row
+  topfive_words_nostop <- left_join(topfive_words_nostop, total_words_nostop)
+  
+  frequency_nostop <- topfive_words_nostop %>%
+    mutate(freq = n/total)
+  
+##### Plot term frequencies for five genres #####
+  common_words <- frequency_nostop %>%
+    group_by(genre) %>%
+    top_n(10, freq) %>%
+    ungroup() %>%
+    arrange(genre, -freq)
+
+  common_words %>%
+  mutate(word = reorder(word, freq)) %>%
+  group_by(genre, word) %>%    
+  arrange(desc(freq)) %>%  
+  ungroup() %>%
+  mutate(word = factor(paste(word, genre, sep = "__"), 
+                       levels = rev(paste(word, genre, sep = "__")))) %>%
+  ggplot(aes(word, freq, fill = as.factor(genre))) +
+    geom_col(show.legend = FALSE) +
+    coord_flip() +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    labs(title = "Top 10 terms in each genre",
+         x = NULL, y = expression(freq)) +
+    facet_wrap(~ genre, ncol = 3, scales = "free")
+ 
+ 
+  
+  
+
+```     
+
+
 ```{r Tidytext: Analyze term frequency+inverse document frequency}
 
 # Load genre dataset
@@ -621,7 +633,7 @@ topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
   # Include total words for each row
   topfive_words <- left_join(topfive_words, total_words)
   
- saveRDS(topfive_words, here::here("rds_data", "words_topfive.rds"))   
+  saveRDS(topfive_words, here::here("rds_data", "words_topfive.rds"))   
   
 # Combine inverse document frequency with term frequency 
   topfive_words <- topfive_words %>%
@@ -672,7 +684,6 @@ topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
     arrange(desc(tf_idf))
 
 ```
-
 
 
 ```{r Check session info}
