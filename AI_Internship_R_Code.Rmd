@@ -23,7 +23,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("cleanNLP")
 # install.packages("knitr")
 # install.packages("kableExtra")
-
+# install.packages("topicmodels")
 
 library(here) # create subdirectory and file path
 library(dplyr)
@@ -339,7 +339,7 @@ for (i in 1:5){
   cnlp_init_spacy(model_name = "en")
 
 # Load summaries of top five movie genres dataset
-  topfive_dataset <- readRDS(here("rds_data", "data_topfive.rds"))
+  topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
 
 # Run the annotator for each genre from text folder
   object <- cnlp_annotate(topfive_dataset$summary, doc_ids = topfive_dataset$genre) 
@@ -427,14 +427,56 @@ for (i in 1:5){
 # Load the annotation dataset
   anno <- readRDS(here::here("rds_data", "anno_topfive_bygenre.rds"))
 
+# Load Topic Models
+  library(topicmodels)
+
 # Pull out the dependency table with built-in option to auto join with token table
   dep <- cnlp_get_token(anno) %>%
     filter(pos %in% c("NN", "NNS")) %>%
-    cnlp_utils_tfidf(min_df = 0.05, max_df = 0.95,
-                     type = "tfidf", tf_weight = "dnorm") %$%
-    tidy_pca(tfidf, get_document(anno))
-    
+    cnlp_utils_tfidf(min_df = 0.05, max_df = 0.95, 
+                     type = "tf", tf_weight = "raw") 
+  
+# Create a five-topic model
+  tm_movies <- LDA(dep, k = 5, control = list(seed = 1234))
+  
+  saveRDS(tm_movies, here::here("rds_data", "five-topic LDA.rds"))
+```
 
+```{r Examine document and topic relationship}  
+  tm_movies <- readRDS(here::here("rds_data", "five-topic LDA.rds"))
+  
+# Examine per-document-per-topic probabilities
+  chapters_topics <- tidy(tm_movies, matrix = "beta")
+  
+  
+  plot_topwords <- chapters_topics %>%
+    group_by(topic) %>%
+    top_n(5, beta) %>%
+    ungroup() %>%
+    arrange(topic, -beta) %>%
+    mutate(term = reorder(term, beta)) %>%
+    ggplot(aes(term, beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    labs(x = "Per-topic-per-word Probabilities", y = "Terms", caption = "Figure 4.1 The terms that are most common within each topic") +
+    theme_minimal(base_size = 10) +
+    scale_fill_manual(values=cbPalette) +
+    facet_wrap(~topic, scales = "free") +
+    coord_flip()
+
+    saveRDS(plot_topwords, here::here("image", "Beta_LDA.rds"))
+
+  chapters_gamma <- tidy(tm_movies, matrix = "gamma")
+  
+
+  plot_topicgen <- chapters_gamma %>%
+    mutate(title = reorder(document, gamma * topic)) %>%
+    ggplot(aes(factor(topic), gamma, fill = document)) +
+    labs(x = "Gamma Probabilities for Genre", y = "Five Topics", caption = "Figure 4.2 The gamma probabilities for each genre") +
+    geom_bar(position="dodge",stat="identity") +
+    facet_wrap(~ title)
+
+    saveRDS(plot_topicgen, here::here("image", "gamma_LDA.rds"))
+  
 ```
 
 
@@ -494,7 +536,71 @@ topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
 
 ```     
 
-  
+
+```{r Check Zipfs law}
+
+# Load top five produced genres
+  topfive_words <- readRDS(here::here("rds_data", "words_topfive.rds"))
+
+##### Plot out term frequency distribution for each genre #####
+    ggplot(topfive_words, aes(n/total, fill = genre)) +
+      geom_histogram(show.legend = FALSE) +
+      xlim(NA, 0.00003) +
+      xlab("Term Frequency") + ylab("Counts of Words") +
+      facet_wrap(~genre, ncol = 2, scales = "free_y")  # Many words occur rarely and fewer words (e.g. stop words) occur frequently
+    
+
+  # Examine Zipf's law for five genres
+    freq_by_rank <- topfive_words %>%
+      group_by(genre) %>%
+      mutate(rank = row_number(),
+             "term_frequency" = n/total)
+    
+##### Plot rank vs. frequency in log-log coordinates #####
+    freq_by_rank %>% 
+      ggplot(aes(rank, term_frequency, color = genre)) + 
+      geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) +
+      xlab("Rank") + ylab("Term Frequency") +
+      labs(colour= "Top Five Popular Movie Genres") +
+      scale_x_continuous(trans='log10') +
+      scale_y_continuous(trans='log10')
+
+# topfive_words <- readRDS(here::here("rds_data", "words_topfive.rds"))  
+
+# Examine Zipf's law for five genres
+    freq_by_rank <- topfive_words %>%
+      group_by(genre) %>%
+      mutate(rank = row_number(),
+             "term_frequency" = n/total)
+
+  # Select the middle portion to find the exponent of the power law
+    rank_subset <- freq_by_rank %>% 
+      filter(rank < 5000,
+      rank > 80)
+      
+    lm <- lm(log10(term_frequency) ~ log10(rank), data = rank_subset)
+      
+##### Fit a curve that follows Zipf's law #####
+    freq_by_rank %>% 
+      ggplot(aes(rank, term_frequency, color = genre)) + 
+      coord_fixed() +
+      geom_abline(intercept = lm$coefficients[1], slope = lm$coefficients[2], color = "gray50", linetype = 2) +
+      geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+      xlab("Rank") + ylab("Term Frequency") +
+      labs(colour= "Top Five Popular Movie Genres") +
+      scale_x_continuous(trans='log10') +
+      scale_y_continuous(trans='log10') +
+      theme(legend.title = element_text(colour="Black", size=10, 
+                                      face="bold"))+
+      scale_colour_manual(values=cbPalette)
+    
+    
+    
+```
+
+
+### More attempt
+
 ```{r Tidytext: Analyze term frequency+inverse document frequency}
 
 # Load genre dataset
@@ -567,67 +673,6 @@ topfive_dataset <- readRDS(here::here("rds_data", "data_topfive.rds"))
 
 ```
 
-
-```{r Check Zipfs law}
-
-# Load top five produced genres
-  topfive_words <- readRDS(here::here("rds_data", "words_topfive.rds"))
-
-##### Plot out term frequency distribution for each genre #####
-    ggplot(topfive_words, aes(n/total, fill = genre)) +
-      geom_histogram(show.legend = FALSE) +
-      xlim(NA, 0.00003) +
-      xlab("Term Frequency") + ylab("Counts of Words") +
-      facet_wrap(~genre, ncol = 2, scales = "free_y")  # Many words occur rarely and fewer words (e.g. stop words) occur frequently
-    
-
-  # Examine Zipf's law for five genres
-    freq_by_rank <- topfive_words %>%
-      group_by(genre) %>%
-      mutate(rank = row_number(),
-             "term_frequency" = n/total)
-    
-##### Plot rank vs. frequency in log-log coordinates #####
-    freq_by_rank %>% 
-      ggplot(aes(rank, term_frequency, color = genre)) + 
-      geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) +
-      xlab("Rank") + ylab("Term Frequency") +
-      labs(colour= "Top Five Popular Movie Genres") +
-      scale_x_continuous(trans='log10') +
-      scale_y_continuous(trans='log10')
-
-# topfive_words <- readRDS(here::here("rds_data", "words_topfive.rds"))  
-
-# Examine Zipf's law for five genres
-    freq_by_rank <- topfive_words %>%
-      group_by(genre) %>%
-      mutate(rank = row_number(),
-             "term_frequency" = n/total)
-
-  # Select the middle portion to find the exponent of the power law
-    rank_subset <- freq_by_rank %>% 
-      filter(rank < 5000,
-      rank > 80)
-      
-    lm <- lm(log10(term_frequency) ~ log10(rank), data = rank_subset)
-      
-##### Fit a curve that follows Zipf's law #####
-    freq_by_rank %>% 
-      ggplot(aes(rank, term_frequency, color = genre)) + 
-      coord_fixed() +
-      geom_abline(intercept = lm$coefficients[1], slope = lm$coefficients[2], color = "gray50", linetype = 2) +
-      geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
-      xlab("Rank") + ylab("Term Frequency") +
-      labs(colour= "Top Five Popular Movie Genres") +
-      scale_x_continuous(trans='log10') +
-      scale_y_continuous(trans='log10') +
-      theme(legend.title = element_text(colour="Black", size=10, 
-                                      face="bold"))+
-      scale_colour_manual(values=cbPalette)
-    
-    
-    
-```
 
 
 ```{r Check session info}
