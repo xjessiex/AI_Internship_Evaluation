@@ -24,7 +24,8 @@
 The RDS files which are saved and loaded the [coding file](https://github.com/xjessiex/AI_Internship_Evaluation/blob/master/AI_Internship_R_Code.Rmd) may not work due to the limitation in push size of GitHub.
 
 ## Featured Deliverables
-* [Project Summary](https://github.com/xjessiex/AI_Internship_Evaluation/blob/master/Project_Summary_XY.pdf)
+* Html: Copy the summary [link](https://github.com/xjessiex/AI_Internship_Evaluation/blob/master/Project_Summary.html) into this github [html reader](http://htmlpreview.github.io/)
+* PDF (fail to display latex equation): [Project Summary](https://github.com/xjessiex/AI_Internship_Evaluation/blob/master/Project_Summary_XY.pdf)
 
 ## Contact
 ** Xiaoxuan Yang: [xy77@duke.edu]
