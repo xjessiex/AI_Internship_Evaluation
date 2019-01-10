@@ -14,7 +14,7 @@
 * Text mining packages: `tm`, `tidytext`;
 * Data visualization: `ggplot2`;
 * Natural language Processing library: `spaCy` (wrapped in `cleanNLP`), `topicmodels`;
-# Data manipulation: `tidyverse`;
+* Data manipulation: `tidyverse`;
 
 ### Tools
 * R
