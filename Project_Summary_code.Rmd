@@ -1,0 +1,520 @@
+---
+title: "Exploratory Analysis on Movie Summaries"
+subtitle: AI Data Science Internship Evaluation 2019
+author: Xiaoxuan Yang
+output:
+  
+  html_document:
+    theme: sandstone
+    highlight: tango  
+  html_notebook: default
+---
+<br>
+<br>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+tidy.opts = list(width.cutoff = 50)
+
+set.seed(0)
+# Install and load packages
+# install.packages("here")
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("tm")
+# install.packages("tidytext") 
+# install.packages("ggplot2")
+# install.packages("Hmisc")
+# install.packages("eply")
+# install.packages("cleanNLP")
+# install.packages("knitr")
+# install.packages("kableExtra")
+# install.packages("cowplot")
+# install.packages("topicmodels")
+# install.packages("broom")
+
+library(here)
+library(dplyr)
+library(tidyverse)
+library(tibble)
+library(readr)
+library(tm) # used to create corpora
+library(tidytext) # used for tokenization
+library(ggplot2)
+library(Hmisc) # used to capitalize genre names
+library(eply) # get rid of the quotation marks of genres
+library(cleanNLP)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(broom)
+library(topicmodels)
+
+# Blind friendly colors
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+```
+
+## Synopsis
+
+***
+
+### Problem Statement
+
+A central question in text mining and natural language processing is how to quantitatively understand texts. In this particular project, the objective is to explore the [`Wikipedia movie summaries`](https://www.dropbox.com/s/ge8dsb56vv9ofd4/movie_data.csv). Following the given guidelines, I use natural language processing (NLP) tools with R and conduct univariate and multi-variate exploration of the dataset, summarized below:
+
+* find the most produced and the most profitable movie genres 
+* identify common characteristics in movies summaries
+* compare the word usage in the top five produced genres with Zipf’s law
+
+> Note: Zipf's law suggests that empirically, the frequency of any word is inversely proptional to its rank in the frequency table. In other words, word frequency decreases very rapidly for lesser used words in a document.
+
+
+```{r Load raw Wikipedia movie summaries, echo=FALSE }
+movie_data <- as_tibble(read_csv("movie_data.csv",
+                                   col_types = cols(
+                                     id = col_integer(),
+                                     title = col_character(),
+                                     release_date = col_character(), # using col_date causes parsing failures
+                                     box_office_revenue = col_number(),
+                                     runtime = col_double(),
+                                     genres = col_character(),
+                                     summary = col_character()
+                                    )
+                                )
+                        ) # using tibble to avoid converting strings to factors
+
+```
+
+### Solution Overview
+
+In this project, I use the following packages to solve for the topics below:
+
+1. **Genre Frequency**: classic `tm` package to create corpus and calculate word frequency.
+
+2. **Automatic Annotations**: `spaCy` Python library through an R wrapper, `cleanNLP`, to convert raw texts of the movie summaries into feature-rich data frames; provides basic annotators to do part of speech tagging, named entity recognition (like person or places), etc; `tidytext` to calculate term frequency and combine it with inverse document frequency (not plotted in the summary). 
+
+3. **Topic Modeling**: `topicmodels`, coupled with `LDA` to divide summaries into topics and match the topics with genres. 
+
+4. **Zipf's Law Examination**: `tidytext` to calculate term frequency and ranks after tokenization; `lm` to find the exponent of the power law curve.
+
+
+### Major Insights
+
+* The most produced movie genres are drama, comedy, romance film, and thriller.
+* Adventure movies attract the most box office revenue, even though there are fewer adventure movies overall.
+* Movie summaries of top five produced genres share similar common nouns, such as _who_, _father_ and _time_.
+* Preliminary result from topic modeling shows that the top five produced movie genres use distinct nouns in their movie summaries overall, which may result from the usage of film-specific names and places.
+* The movie summaries use fewer common words as compared to other texts (demonstrated by Zipf's law) but still mostly follow Zipf's law curve. 
+
+<br>
+
+
+## Exploratory Data Analysis
+***
+
+### Data Preparation and Preview
+
+The dataset contains a dataframe of around 42k rows and 7 columns. For the **Genre** column, I first remove the space for two-word categories and manually remove terms like "Dogme95". The **Date** column consists of cells with various data types and leves of details. Since I do not need the exact release day of the movies in this particular project, I convert the date into a new **Year** column. After removing rows with missing values in the **Year** column, let's explore the remaining data with a basic plot of the numbers of movies released across all years.
+
+
+```{r Load data and Remove NA, echo=FALSE}
+# Load the cleaned dataset
+  movie_data <- readRDS(here::here("rds_data","data_clean.rds"))
+  
+# Eliminate NAs in year
+  movie_data <- filter(movie_data, year != "") 
+  
+```
+
+
+```{r Plot numbers of released movies vs. year, echo=TRUE, fig.cap="Figure 1. Histogram of Movies Released Over the Years.", fig.align="center", fig.height=3, fig.width=5 }
+
+  ggplot(movie_data, aes(year)) +
+    geom_bar() +
+    labs(x = "Released Year", y = "Movie Count") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+As we can visually observe from the plot, Fig. 1 displays an exponential increase of movie production from late 1980s to early 2010s. This exercise helps us to understand the dataset.
+
+<br>
+
+
+### Movie Genres
+
+Next, I convert genre variables to a corpus by using the classic `tm` package. My goal is to find the most produced and the most profitable movie genres. I assume that each movie is allowed to represent several genres (see [`this article`](https://www.r-bloggers.com/imdb-genre-classification-using-deep-learning/) for randomly assignment approach). 
+
+```{r Load movie data and create corpus, echo=FALSE}
+
+# Load the cleaned dataset
+  movie_data <- readRDS(here::here("rds_data", "data_clean.rds"))
+
+
+##### Create Corpus for Movie Genres #####
+  genre <- Corpus(VectorSource(movie_data$genres))
+  genre_dtm <- DocumentTermMatrix(genre)  # create a document-term matrix from a Corpus object
+  genre_freq <- colSums(as.matrix(genre_dtm))
+  freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE) 
+  genre_wf <- data.frame(Word=names(freq), Frequency=freq)
+  genre_wf$Word <- unquote(genre_wf$Word) # eliminate the quotation marks
+  rownames(genre_wf) <- NULL  # eliminate rownames
+  
+  # Manually add space to movie genres
+  genre_wf$Word[genre_wf$Word == "romancefilm"] <- "Romance Film"
+  genre_wf$Word[genre_wf$Word == "worldcinema"] <- "World Cinema"
+  genre_wf$Word[genre_wf$Word == "crimefiction"] <- "Crime Fiction"
+  genre_wf$Word <- capitalize(genre_wf$Word)
+```
+
+
+```{r Display how to create Corpus for Movie Genres, eval=FALSE}
+# Create Corpus for movie genres
+  genre <- Corpus(VectorSource(movie_data$genres))
+  genre_dtm <- DocumentTermMatrix(genre)  # create a document-term matrix 
+  genre_freq <- colSums(as.matrix(genre_dtm)) # calculate frequency by summing up the elements
+  freq <- sort(colSums(as.matrix(genre_dtm)), decreasing=TRUE)
+  genre_wf <- data.frame(Word=names(freq), Frequency=freq) # organize the new dataframe
+  genre_wf$Word <- unquote(genre_wf$Word) # eliminate the quotation marks (could be done earlier)
+  rownames(genre_wf) <- NULL  # remove rownames
+ 
+```
+<br>
+Using the code above, I create a document term matrix with movies designated by rows and its associated genres by columns. By summing up the elements (counts) in each column, I generate the genre frequency, as shown in Table 1.
+<br>
+```{r Plot Corpus, echo=FALSE, fig.cap="Table 1. Genre frequency table by creating Corpus and summing up document-term matrix."}
+
+  colnames(genre_wf) <- c("Genre", "Frequency") 
+  
+  kable(genre_wf[1:5,], caption = 'Table 1. Genre frequency table with top 5 genres.') %>%
+  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+<br>
+Similarly, I sum up all the box office revenues for movies across all given years. Since I do not know if the given dataset is an exhaustive list of released movies, I choose summation over averaging method to compare revenues between genres. In the side-by-side plots below, I notice that even though adventure movies are not the most produced genre, they attract the most box office revenue over the years--it takes ten years to make _Avatar_ and who wouldn't want to watch it on a big IMAX screen more than once? 
+<br>
+```{r Find most produced genres, echo=FALSE}
+
+##### Plot out the top produced genres #####
+
+  plot_produce <- genre_wf %>%
+      arrange(desc(Frequency)) %>%
+      top_n(5, Frequency ) %>%
+      ggplot(aes(x = reorder(Genre, Frequency), Frequency, label = Frequency)) +
+      geom_bar(stat="identity", fill = "#E69F00", width = 0.5) +
+      labs(x = NULL, y = "Genre Frequency", caption = "Figure 2.1 Top five most produced movie genres") +
+      geom_text(color = "white", size = 4, vjust = 0.5, hjust = 1.1) +
+      theme_minimal(base_size = 12)+
+      ggtitle("Most Produced Movie Genres") +
+      coord_flip()
+    
+```
+
+```{r Find most profitable movie genres, echo=FALSE}
+
+# Load the cleaned dataset
+    sum_revenue <- readRDS(here::here("rds_data","movie_revenue.rds"))
+
+    profit_label <- c("397 Billion", "356 Billion", "336 Billion", "332 Billion", "279 Billion")
+      
+    plot_profit <- sum_revenue %>%
+      group_by(genre) %>%
+      summarise("Sum_Revenue" = sum(sum)) %>%
+      arrange(desc(Sum_Revenue)) %>%
+      top_n(5, Sum_Revenue ) %>%
+      ggplot(aes(x = reorder(genre, Sum_Revenue), Sum_Revenue, label = profit_label)) +
+      geom_bar(position="dodge",stat="identity", fill = "#56B4E9", width = 0.5 ) +
+      labs(x = NULL, y = "Total Box Office Revenue ($)", 
+           caption = "Figure 2.2 Top five most profitable movie genres") +
+      geom_text(color = "white", size = 4, vjust = 0.5, hjust = 1.1) +
+      theme_minimal(base_size = 12)+
+      ggtitle("Most Profitable Movie Genres") +
+      coord_flip()
+    
+```
+
+```{r Display most produced and profitable genres, echo=FALSE, fig.height=3, fig.width=7, fig.align='center'}
+plot_grid(plot_produce, plot_profit, ncol = 2, nrow = 1)
+```
+
+<br>
+
+### Characteristics of the Movie Summaries
+
+Here comes the most exciting and challenging part of the project. After subsetting the dataset to only include the top produced movie genres, I dive into the texts of those movie summaries using `cleanNLP` and `tidytext`. The package `cleanNLP` ([`learn more`](https://arxiv.org/pdf/1703.09570.pdf)) produces a data table that includes annotated objects such as lemmas and part-of-speech, as indicated in Table 2. For example, the word `Eva` is labeled as a non proper noun (pos = NNP) and the first token (tid = 1) in the first sentence (sid = 1). 
+
+<br>
+
+> Assumption: I ignore the film level difference and compile all summaries within each genre as one document.
+
+```{r Use cleanNLP, eval=FALSE}
+# Initialize the NLP backend
+  library(reticulate)
+  library(cleanNLP)
+  use_python(python = '/usr/local/bin/python3') # set the right python version 
+  py_config() # check python configuration
+  cnlp_init_spacy(model_name = "en") # initialize spaCy library (after select python version)
+  object <- cnlp_annotate(dataset$summary, doc_ids = dataset$genre) #  top five genres dataset
+
+```
+
+```{r Plot token table, echo = FALSE}
+  anno <- readRDS(here::here("rds_data", "anno_topfive_bygenre.rds"))
+  token <- cnlp_get_token(anno)
+  kable(token[1:5,], caption = "Table 2. Tokens table by cleanNLP. The fields id, sid, and tid serve as a composite key for each token (adapted from Arnold 2017). ") %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+  
+```
+
+<br>
+Since `cleanNLP` has the tidy data model built in to represent corpus annotations, I seemlessly incorporate it with the piping notation and `ggplot2` graphics. After counting the tokens (in the form of lemma) and rank them based on the frequency, I manage to analyze the most used **nouns** across five genres. As Fig. 3 suggests, those five genres share a similar set of frequently used words. The word _who_ ranks the top for all genres, which makes sense since movie summaries have a descriptive language. While it's reasonable to see _love_ in the romance film genre, it's interesting to see the word _police_ appear in both action and thriller genres. I also use `tidytext` to verify the most frequency words (as documented at the end of my [coding file](https://github.com/xjessiex/AI_Internship_Evaluation/blob/master/AI_Internship_R_Code.Rmd)). Since `tidytext` doesn't distinguish between verbs and nouns, the word _kill_ makes it to the top common words in both action and thriller genres, too.
+
+```{r Plot individual common nouns, include=FALSE}
+# Load the annotation dataset
+  anno <- readRDS(here::here("rds_data", "anno_topfive_bygenre.rds"))
+# Extract tokens 
+  token <- cnlp_get_token(anno)
+  
+# Pull out the token table
+  token_table <- token %>%
+    filter(upos == "NOUN") %>%
+    filter(!lemma == "film") %>%
+    filter(!lemma == "man") %>%
+  group_by(id, lemma) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  ungroup() 
+  
+  list_genre <- c("Drama", "Comedy", "Romance Film", "Thriller", "Action")  
+    
+
+        plot_drama <- token_table %>% 
+          filter(id == "Drama") %>% 
+          arrange(desc(count)) %>%
+          top_n(5) %>%
+          ggplot(aes(x = reorder(lemma, count), y = count)) +
+            geom_bar(position="dodge",stat="identity", 
+                     fill = cbPalette[2], width = 0.5, show.legend = FALSE) +
+            labs(x = NULL, y = "Counts", title = "Drama") +
+            theme_minimal() +
+            coord_flip()
+        
+        plot_comedy <- token_table %>% 
+          filter(id == "Comedy") %>% 
+          arrange(desc(count)) %>%
+          top_n(5) %>%
+          ggplot(aes(x = reorder(lemma, count), y = count)) +
+            geom_bar(position="dodge",stat="identity", 
+                     fill = cbPalette[3], width = 0.5, show.legend = FALSE) +
+            labs(x = NULL, y = "Counts", title = "Comedy") +
+            theme_minimal() +
+            coord_flip()
+
+        plot_romance <- token_table %>% 
+          filter(id == "Romance Film") %>% 
+          arrange(desc(count)) %>%
+          top_n(5) %>%
+          ggplot(aes(x = reorder(lemma, count), y = count)) +
+            geom_bar(position="dodge",stat="identity", 
+                     fill = cbPalette[4], width = 0.5, show.legend = FALSE) +
+            labs(x = NULL, y = "Counts", title = "Romance Film") +
+            theme_minimal() +
+            coord_flip()
+
+        plot_thriller<- token_table %>% 
+          filter(id == "Thriller") %>% 
+          arrange(desc(count)) %>%
+          top_n(5) %>%
+          ggplot(aes(x = reorder(lemma, count), y = count)) +
+            geom_bar(position="dodge",stat="identity", 
+                     fill = cbPalette[5], width = 0.5, show.legend = FALSE) +
+            labs(x = NULL, y = "Counts", title = "Thriller") +
+            theme_minimal() +
+            coord_flip()
+        
+        plot_action <- token_table %>% 
+          filter(id == "Action") %>% 
+          arrange(desc(count)) %>%
+          top_n(5) %>%
+          ggplot(aes(x = reorder(lemma, count), y = count)) +
+            geom_bar(position="dodge",stat="identity", 
+                     fill = cbPalette[6], width = 0.5, show.legend = FALSE) +
+            labs(x = NULL, y = "Counts", title = "Action") +
+            theme_minimal() +
+            coord_flip()
+```
+
+
+```{r Plot common nouns, echo=FALSE, warning=FALSE, fig.align="center", fig.cap="Figure 3. Top frequently used words for selected genres."}
+    plot_grid(plot_drama, plot_comedy, plot_romance, plot_thriller, plot_action, ncol = 3, nrow = 2)
+```
+
+<br>
+
+Another helpful high-level summary of the content is to apply topic models, which describe themes within a textual corpus. Each theme consists of a collection of words that co-occur. Specifically, I am using an unsupervised Bayesian machine learning model, known as Latent Dirichlet allocation (LDA), to find clusters of words (topics) that are specific to different genres. For this preliminary study, I have five different genres that can relate to five separate topics. Knowing the "right answer", I want to see if the algorithm correctly distinguish the five categories. 
+
+```{r Pipe term frequency into LDA, eval=FALSE, warning=FALSE}
+  library(topicmodels)
+
+# Pull out the raw counts of term frequency
+  dep <- cnlp_get_token(anno) %>%
+    filter(pos %in% c("NN", "NNS")) %>% 
+    cnlp_utils_tfidf(min_df = 0.05, max_df = 0.95, 
+                     type = "tf", tf_weight = "raw") 
+  
+# Create a five-topic model and set a seed for reproductability
+  tm_movies <- LDA(dep, k = 5, control = list(seed = 1234)) 
+
+```
+
+
+> Latent Dirichlet allocation: each topic is a mixture of words, while each document (genre, in this case) is a mixture of topics.
+
+After tidying model objects and extracting the per-topic-per-word and per-document-per-topic probabilities, I can now evaluate the model fit--how words are grouped into topics and how topics are assigned to documents. As shown below in Fig. 4, I select the top five words that are most common within each topic.
+
+```{r term vs. topic vs. document, fig.align="center", echo =FALSE, fig.height=3, fig.width=6.5, fig.cap="Figure 4. The terms that are most common within each topic."}
+  chapters_topics <- readRDS(here::here("rds_data", "beta_LDA_table.rds"))
+  
+  chapters_topics %>%
+    group_by(topic) %>%
+    top_n(5, beta) %>%
+    ungroup() %>%
+    arrange(topic, -beta) %>%
+    mutate(term = reorder(term, beta)) %>%
+    ggplot(aes(term, beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    labs(x = "Per-topic-per-word Probabilities", y = "Terms") +
+    theme_minimal(base_size = 10) +
+    theme(plot.caption = element_text(hjust = 4)) +
+    scale_fill_manual(values=cbPalette) +
+    facet_wrap(~topic, scales = "free") +
+    coord_flip()
+
+```
+
+I also display per-document-per-topic probabilities (Table. 3) . Each value in the table represents the estimated proportions of genre summaries generated from each topic. For example, 0.16% of the words in comedy genre summaries are generated from topic 2.
+
+```{r Gamma demo, eval=FALSE}
+# Extract information on topic probabilities for each genre
+  table_gamma <- tidy(tm_movies, matrix = "gamma")
+
+# Plot 
+table_gamma[, 2:6] %>%
+  mutate(Genre = row.names(table_gamma)) %>%
+  select(Genre, everything()) %>%
+  kable(align = "c", escape = F) %>%
+  kable_styling(c("striped", "condensed"), full_width = F)
+```
+
+
+```{r Plot gamma table, echo=FALSE, fig.cap="Table 3. Probability distribution of genres over topics.", fig.align="center"}
+table_gamma <- readRDS(here::here("rds_data", "gamma_LDA_table.rds"))
+
+table_gamma[, 2:6] %>%
+  mutate(
+    Genre = row.names(table_gamma)) %>%
+  select(Genre, everything()) %>%
+  kable(align = "c", escape = F, caption = "Table 3. Probability distribution of genres over topics") %>%
+  kable_styling(c("striped", "condensed"), full_width = F)
+```
+
+<br>
+While it looks like that the model perfectly matches the genres with only one topic, we need to take a step back and recall that I treat all movies summaries the same within each genre. Thus, the large scale of analysis on genre discourages the assignment of more than one topic to one genre. In the future, to better assess the data, I need to seperate genres summaries into different film ids and run the similar approach. In addition, allowing a larger set of topics can be helpful to address more detailed patterns in language. 
+
+Nonetheless, I am happy to see _ninjas_ being assigned to the action genre while _crawler_ is assigned to the thriller genre (Fig. 4). The sharp difference in topic assignment implies that the movie summaries use a large amount of film-specfic non proper nouns like character names and places, which is verified by calculating inverse document frequency in `tidytext`.
+
+<br>
+<br>
+
+### Evidence of Zipf’s law
+***
+Zipf's law can be understood as an inverse relationship between the word frequency and the rank (relative frequency to other words), as shown below:
+
+$$\text{frequency} \propto \frac{1}{\text{rank}}$$
+
+Thus, our objective is to plot frequency against rank and make the comparison. First, to plot the term frequency, I apply `tidytext` to quickly run the term frequency distribution for the five genres. The reason that I choose `tidytext` over `cleanNLP` are the following:
+
+1. Even though `cleanNLP` has more comprehensive annotations, it takes a fairly long time to run. 
+
+2.  `tidytext` works well for applications that do not need more advanced annotators. For this part of the project, I simply need to calculate the term frequency without any additional annotations.
+
+
+Thus, I plot the frequency of each word against the number of words with the same frequency. By this logic, I expect long tails to the right for all genres, because very few words occur frequently. I also expect high bars at low frequency due to random character strings that may result from incomplete cleaning of the dataset. 
+
+```{r Term frequency distribution, fig.width=7, fig.height=4, echo=FALSE, warning=FALSE, fig.cap="Figure 5. Total word frequency distribution in selected genres.", fig.align="center"}
+
+# Load top five produced genres
+  topfive_words <- readRDS(here::here("rds_data","words_topfive.rds"))
+
+##### Plot out term frequency distributionfor each genre #####
+    ggplot(topfive_words, aes(n/total, fill = genre)) +
+      stat_bin(bins = 30,show.legend = FALSE) +
+      xlim(NA, 0.00003) +
+      xlab("Term Frequency") + ylab("Counts of Words") +
+      facet_wrap(~genre, ncol = 2, scales = "free_y") +
+      theme_minimal() +
+      scale_fill_manual(values=cbPalette)# Many words occur rarely and fewer words (e.g. stop words) occur frequently
+    
+```
+
+As shown in Fig. 5, those plots display similar distributions for those five genres. With the same dataframe I use to plot term frequency, I rank each word within the frequency table, in preparation to compare with Zipf's law.
+
+```{r Add ranks}
+# Organize term frequency by genres and add ranks
+    freq_by_rank <- topfive_words %>%
+      group_by(genre) %>%
+      mutate(rank = row_number(), # find the rank
+             "term_frequency" = n/total)
+```
+  
+<br>
+Zipf's law is often visualized by plotting rank on the x-axis and term frequency on the y-axis on log scales. Taking the approach fully documented [`here`](https://www.tidytextmining.com/tfidf.html#zipfs-law), I find the exponent of the power law equation by doing a linear regression to a partial rank range and plotting the fitted power law with the rank data. 
+
+```{r Zipfs law, fig.width=7, fig.height=4, echo=TRUE, fig.cap="Figure 6. Fitting an exponent of Zipf's law with word frequency.", fig.align="center", warning=FALSE}  
+# Select the middle portion of the rank range to find the exponent of the power law
+    rank_subset <- freq_by_rank %>% 
+      filter(rank < 5000,
+             rank > 80)
+      
+# Use linear model to find the proper coefficients
+    lm <- lm(log10(term_frequency) ~ log10(rank), data = rank_subset)
+      
+# Fit a curve that follows Zipf's law
+    freq_by_rank %>% 
+      ggplot(aes(rank, term_frequency, color = genre)) + 
+      geom_abline(aes(intercept = lm$coefficients[1], 
+                  slope = lm$coefficients[2], 
+                  fill = "Fitted Zipf's law"), linetype = 1) +
+      geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+      xlab("Rank") + ylab("Term Frequency") +
+      labs(colour= "Top Five Produced Movie Genres", fill = "") +
+      scale_x_continuous(trans='log10') +
+      scale_y_continuous(trans='log10') +
+      theme(legend.title = element_text(colour="Black", size=10, face="bold"))+
+      theme_minimal() +
+      scale_color_manual(values=cbPalette) 
+    
+
+```
+
+<br>
+I have found our plots of the corpus similar to the classic version of Zipf's law (as indicated by the black straight line), with obvious deviation at low rank (e.g. rank = 80000). The deviation at low rank suggests that the language used in movie summaries consists of fewer numbers of rare words compared to other collections of language, which are not uncommon for many kinds of language. The minor deviation at high rank (e.g. rank = 5) suggests that the film summaries do not use as many common words. This may result from an extensive use of proper nouns that are case-specific and "rare" when considering its appearance in all reviews, which again echoes with our conclusion in last section.
+
+<br>
+
+## Future Steps
+***
+
+1. More data cleaning: Due to the time limits, I only clean selected columns. However, for future projects, descriptors like `Runtime`, can be very helpful to understand how movie length changes over years. In addition, several genres categories have the potential to be integrated. For example, the genres "gay" and "gay interest" can be organized into the same genre category.
+
+2. Genre association: As I notice from analyzing the genres, the majority of the movies is categorized into several different genres. It will be informative to understand how those genres overlap.
+
+3. More accurate annotations: To increase the accuracy of the annotation process, I can choose to use an even larger size model when running the `cleanNLP` package. There are also more questions to explore with other advanced annotators, such as character names and locations mentioned in the movie summaries.
+
+4. More exploration on topic modeling: In topic modeling, the next important step for this project is to use film as a unit for clustering and recognize each genre as a mixture of different topics. I also hope to try to specify the appropriate level of granularity for this corpus of movie summaries.
+
+<br>
+
+## Acknowledgements
+
+I have to credit my go-to book, ["Text Mining with R"](https://www.tidytextmining.com/), for helping me navigate tools like LDA. I also want to thank all the developers who create those wonderful natural language processing tools.
+
